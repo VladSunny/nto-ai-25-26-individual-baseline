@@ -16,9 +16,12 @@ def prepare_data() -> None:
     This function:
     1. Loads raw data from data/raw/
     2. Filters training data (only has_read=1)
-    3. Applies feature engineering (aggregates, genres, TF-IDF, BERT)
+    3. Applies feature engineering (genres, TF-IDF, BERT) - NO aggregates to avoid data leakage
     4. Saves processed data to data/processed/processed_features.parquet
-    5. Saves feature list to ensure consistency between train and predict
+    5. Preserves timestamp for temporal splitting
+
+    Note: Aggregate features are computed separately during training to ensure
+    temporal correctness (no data leakage from validation set).
 
     The processed data can then be used by train.py and predict.py without
     re-running the expensive feature engineering steps.
@@ -30,8 +33,9 @@ def prepare_data() -> None:
     # Load and merge raw data
     merged_df, book_genres_df, _, descriptions_df = load_and_merge_data()
 
-    # Apply feature engineering
-    featured_df = create_features(merged_df, book_genres_df, descriptions_df)
+    # Apply feature engineering WITHOUT aggregates
+    # Aggregates will be computed during training on train split only
+    featured_df = create_features(merged_df, book_genres_df, descriptions_df, include_aggregates=False)
 
     # Ensure processed directory exists
     config.PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)

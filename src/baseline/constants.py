@@ -27,6 +27,7 @@ COL_TARGET = "rating"
 COL_SOURCE = "source"
 COL_PREDICTION = "rating_predict"
 COL_HAS_READ = "has_read"
+COL_TIMESTAMP = "timestamp"
 
 # Feature columns (newly created)
 F_USER_MEAN_RATING = "user_mean_rating"

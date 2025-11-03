@@ -280,7 +280,7 @@ def add_bert_features(df: pd.DataFrame, _train_df: pd.DataFrame, descriptions_df
     return df_with_bert
 
 
-def handle_missing_values(df: pd.DataFrame, train_df: pd.DataFrame) -> pd.DataFrame:
+def handle_missing_values(df: pd.DataFrame, train_df: pd.DataFrame) -> pd.DataFrame:  # noqa: C901
     """Fills missing values using a defined strategy.
 
     Fills missing values for age, aggregated features, and categorical features
@@ -303,13 +303,18 @@ def handle_missing_values(df: pd.DataFrame, train_df: pd.DataFrame) -> pd.DataFr
     age_median = df[constants.COL_AGE].median()
     df[constants.COL_AGE] = df[constants.COL_AGE].fillna(age_median)
 
-    # Fill aggregate features for "cold start" users/items
-    df[constants.F_USER_MEAN_RATING] = df[constants.F_USER_MEAN_RATING].fillna(global_mean)
-    df[constants.F_BOOK_MEAN_RATING] = df[constants.F_BOOK_MEAN_RATING].fillna(global_mean)
-    df[constants.F_AUTHOR_MEAN_RATING] = df[constants.F_AUTHOR_MEAN_RATING].fillna(global_mean)
+    # Fill aggregate features for "cold start" users/items (only if they exist)
+    if constants.F_USER_MEAN_RATING in df.columns:
+        df[constants.F_USER_MEAN_RATING] = df[constants.F_USER_MEAN_RATING].fillna(global_mean)
+    if constants.F_BOOK_MEAN_RATING in df.columns:
+        df[constants.F_BOOK_MEAN_RATING] = df[constants.F_BOOK_MEAN_RATING].fillna(global_mean)
+    if constants.F_AUTHOR_MEAN_RATING in df.columns:
+        df[constants.F_AUTHOR_MEAN_RATING] = df[constants.F_AUTHOR_MEAN_RATING].fillna(global_mean)
 
-    df[constants.F_USER_RATINGS_COUNT] = df[constants.F_USER_RATINGS_COUNT].fillna(0)
-    df[constants.F_BOOK_RATINGS_COUNT] = df[constants.F_BOOK_RATINGS_COUNT].fillna(0)
+    if constants.F_USER_RATINGS_COUNT in df.columns:
+        df[constants.F_USER_RATINGS_COUNT] = df[constants.F_USER_RATINGS_COUNT].fillna(0)
+    if constants.F_BOOK_RATINGS_COUNT in df.columns:
+        df[constants.F_BOOK_RATINGS_COUNT] = df[constants.F_BOOK_RATINGS_COUNT].fillna(0)
 
     # Fill missing avg_rating from book_data with global mean
     df[constants.COL_AVG_RATING] = df[constants.COL_AVG_RATING].fillna(global_mean)
@@ -338,16 +343,20 @@ def handle_missing_values(df: pd.DataFrame, train_df: pd.DataFrame) -> pd.DataFr
     return df
 
 
-def create_features(df: pd.DataFrame, book_genres_df: pd.DataFrame, descriptions_df: pd.DataFrame) -> pd.DataFrame:
+def create_features(
+    df: pd.DataFrame, book_genres_df: pd.DataFrame, descriptions_df: pd.DataFrame, include_aggregates: bool = False
+) -> pd.DataFrame:
     """Runs the full feature engineering pipeline.
 
-    This function orchestrates the calls to add aggregate features, genre
+    This function orchestrates the calls to add aggregate features (optional), genre
     features, text features (TF-IDF and BERT), and handle missing values.
 
     Args:
         df (pd.DataFrame): The merged DataFrame from `data_processing`.
         book_genres_df (pd.DataFrame): DataFrame mapping books to genres.
         descriptions_df (pd.DataFrame): DataFrame with book descriptions.
+        include_aggregates (bool): If True, compute aggregate features. Defaults to False.
+            Aggregates are typically computed separately during training to avoid data leakage.
 
     Returns:
         pd.DataFrame: The final DataFrame with all features engineered.
@@ -355,7 +364,11 @@ def create_features(df: pd.DataFrame, book_genres_df: pd.DataFrame, descriptions
     print("Starting feature engineering pipeline...")
     train_df = df[df[constants.COL_SOURCE] == constants.VAL_SOURCE_TRAIN].copy()
 
-    df = add_aggregate_features(df, train_df)
+    # Aggregate features are computed separately during training to ensure
+    # no data leakage from validation set timestamps
+    if include_aggregates:
+        df = add_aggregate_features(df, train_df)
+
     df = add_genre_features(df, book_genres_df)
     df = add_text_features(df, train_df, descriptions_df)
     df = add_bert_features(df, train_df, descriptions_df)

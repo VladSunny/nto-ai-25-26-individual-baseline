@@ -51,6 +51,7 @@ def load_and_merge_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.
             for k, v in dtype_spec.items()
             if k in [constants.COL_USER_ID, constants.COL_BOOK_ID, constants.COL_TARGET]
         },
+        parse_dates=[constants.COL_TIMESTAMP],
     )
 
     # Filter training data: only use books that received a rating (has_read=1)
