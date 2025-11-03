@@ -2,6 +2,8 @@
 Feature engineering script.
 """
 
+import time
+
 import joblib
 import numpy as np
 import pandas as pd
@@ -243,6 +245,10 @@ def add_bert_features(df: pd.DataFrame, _train_df: pd.DataFrame, descriptions_df
 
                 for book_id, embedding in zip(batch_book_ids, batch_embeddings, strict=False):
                     embeddings_dict[book_id] = embedding
+
+                # Small pause between batches to let GPU cool down and prevent overheating
+                if config.BERT_DEVICE == "cuda":
+                    time.sleep(0.2)  # 200ms pause between batches
 
                 if (batch_idx + 1) % 10 == 0:
                     print(f"Processed {batch_idx + 1}/{num_batches} batches...")

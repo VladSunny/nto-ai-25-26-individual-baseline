@@ -37,12 +37,12 @@ TFIDF_NGRAM_RANGE = (1, 2)
 
 # --- BERT PARAMETERS ---
 BERT_MODEL_NAME = constants.BERT_MODEL_NAME
-BERT_BATCH_SIZE = 16
+BERT_BATCH_SIZE = 8
 BERT_MAX_LENGTH = 512
 BERT_EMBEDDING_DIM = 768
 BERT_DEVICE = "cuda" if torch and torch.cuda.is_available() else "cpu"
-# Limit GPU memory usage to 80% to prevent OOM errors
-BERT_GPU_MEMORY_FRACTION = 0.8
+# Limit GPU memory usage to 50% to prevent overheating and OOM errors
+BERT_GPU_MEMORY_FRACTION = 0.5
 
 
 # --- FEATURES ---
