@@ -176,3 +176,5 @@ Score = 1 - (0.5 * RMSE/10 + 0.5 * MAE/10)
 - pandas, scikit-learn, lightgbm, joblib
 - transformers, torch, sentencepiece
 - ruff, pre-commit (dev)
+
+Тестовое изменение
