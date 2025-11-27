@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.decomposition import TruncatedSVD
 from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 
@@ -56,6 +57,41 @@ def add_aggregate_features(df: pd.DataFrame, train_df: pd.DataFrame) -> pd.DataF
     return df.merge(author_agg, on=constants.COL_AUTHOR_ID, how="left")
 
 
+def add_user_genre_features(df: pd.DataFrame, train_df: pd.DataFrame, book_genres_df: pd.DataFrame) -> pd.DataFrame:
+    """Adds user mean rating per genre and preferred genre count.
+    
+    Computes on train_df to avoid leakage, then merges to df.
+    """
+    print("Adding user-genre features...")
+    
+    # Merge genres to train_df
+    train_with_genres = train_df.merge(book_genres_df, on=constants.COL_BOOK_ID, how="left")
+    
+    # User mean rating per genre
+    user_genre_mean = train_with_genres.groupby([constants.COL_USER_ID, constants.COL_GENRE_ID])[config.TARGET].mean().reset_index()
+    user_genre_mean.columns = [constants.COL_USER_ID, constants.COL_GENRE_ID, 'user_genre_mean_rating']
+    
+    # For each user-book in df, get the genres and average the user's mean ratings across those genres
+    df_with_genres = df.merge(book_genres_df, on=constants.COL_BOOK_ID, how="left")
+    df_with_genres = df_with_genres.merge(user_genre_mean, on=[constants.COL_USER_ID, constants.COL_GENRE_ID], how="left")
+    user_book_genre_mean = df_with_genres.groupby([constants.COL_USER_ID, constants.COL_BOOK_ID])['user_genre_mean_rating'].mean().reset_index()
+    user_book_genre_mean.columns = [constants.COL_USER_ID, constants.COL_BOOK_ID, constants.F_USER_GENRE_MEAN_RATING]
+    
+    # User's preferred genres count (genres with > mean rating)
+    user_mean = train_df.groupby(constants.COL_USER_ID)[config.TARGET].mean().reset_index()
+    user_mean.columns = [constants.COL_USER_ID, 'user_overall_mean']
+    user_genre_pref = user_genre_mean.merge(user_mean, on=constants.COL_USER_ID)
+    user_genre_pref['is_preferred'] = (user_genre_pref['user_genre_mean_rating'] > user_genre_pref['user_overall_mean']).astype(int)
+    user_pref_count = user_genre_pref.groupby(constants.COL_USER_ID)['is_preferred'].sum().reset_index()
+    user_pref_count.columns = [constants.COL_USER_ID, constants.F_USER_PREFERRED_GENRES_COUNT]
+    
+    # Merge to df
+    df = df.merge(user_book_genre_mean, on=[constants.COL_USER_ID, constants.COL_BOOK_ID], how="left")
+    df = df.merge(user_pref_count, on=constants.COL_USER_ID, how="left")
+    
+    return df
+
+
 def add_genre_features(df: pd.DataFrame, book_genres_df: pd.DataFrame) -> pd.DataFrame:
     """Calculates and adds the count of genres for each book.
 
@@ -73,6 +109,25 @@ def add_genre_features(df: pd.DataFrame, book_genres_df: pd.DataFrame) -> pd.Dat
         constants.F_BOOK_GENRES_COUNT,
     ]
     return df.merge(genre_counts, on=constants.COL_BOOK_ID, how="left")
+
+
+def add_temporal_features(df: pd.DataFrame, train_df: pd.DataFrame) -> pd.DataFrame:
+    """Adds book age and user recency features."""
+    print("Adding temporal features...")
+    
+    # Book age at interaction
+    df['timestamp_year'] = df[constants.COL_TIMESTAMP].dt.year
+    df[constants.F_BOOK_AGE] = df['timestamp_year'] - df[constants.COL_PUBLICATION_YEAR]
+    df = df.drop('timestamp_year', axis=1)  # Cleanup
+    
+    # User's days since last read (compute on train, apply to all)
+    user_last_ts = train_df.groupby(constants.COL_USER_ID)[constants.COL_TIMESTAMP].max().reset_index()
+    user_last_ts.columns = [constants.COL_USER_ID, 'user_last_ts']
+    df = df.merge(user_last_ts, on=constants.COL_USER_ID, how="left")
+    df[constants.F_DAYS_SINCE_LAST_READ] = (df[constants.COL_TIMESTAMP] - df['user_last_ts']).dt.days.abs()
+    df = df.drop('user_last_ts', axis=1)
+    
+    return df
 
 
 def add_text_features(df: pd.DataFrame, train_df: pd.DataFrame, descriptions_df: pd.DataFrame) -> pd.DataFrame:
@@ -149,6 +204,66 @@ def add_text_features(df: pd.DataFrame, train_df: pd.DataFrame, descriptions_df:
 
     print(f"Added {len(tfidf_feature_names)} TF-IDF features.")
     return df_with_tfidf
+
+
+def add_tfidf_svd_features(
+    df: pd.DataFrame,
+    train_df: pd.DataFrame,
+    descriptions_df: pd.DataFrame,
+    n_components: int = 100,
+) -> pd.DataFrame:
+    """Replace raw TF-IDF with compressed SVD components."""
+    print(f"Adding TF-IDF → SVD ({n_components} components)...")
+
+    config.MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    svd_path = config.MODEL_DIR / f"tfidf_svd_{n_components}.pkl"
+    vectorizer_path = config.MODEL_DIR / constants.TFIDF_VECTORIZER_FILENAME
+
+    # Load or fit the same vectorizer (exactly the same as before)
+    if vectorizer_path.exists():
+        vectorizer = joblib.load(vectorizer_path)
+    else:
+        raise FileNotFoundError("Run the original pipeline once so the TF-IDF vectorizer is saved.")
+
+    # Fit SVD only on training books (anti-leakage)
+    train_books = train_df[constants.COL_BOOK_ID].unique()
+    train_desc = descriptions_df[descriptions_df[constants.COL_BOOK_ID].isin(train_books)][constants.COL_DESCRIPTION].fillna("")
+
+    X_train_tfidf = vectorizer.transform(train_desc)
+
+    if svd_path.exists():
+        print(f"Loading precomputed SVD ({n_components} components)...")
+        svd = joblib.load(svd_path)
+    else:
+        print(f"Fitting TruncatedSVD(n_components={n_components}) on train TF-IDF...")
+        svd = TruncatedSVD(n_components=n_components, random_state=config.RANDOM_STATE)
+        svd.fit(X_train_tfidf)
+        joblib.dump(svd, svd_path)
+        print(f"SVD saved to {svd_path}")
+
+    # Transform ALL descriptions with the fitted SVD
+    all_desc = descriptions_df[[constants.COL_BOOK_ID, constants.COL_DESCRIPTION]].copy()
+    all_desc[constants.COL_DESCRIPTION] = all_desc[constants.COL_DESCRIPTION].fillna("")
+    X_all_tfidf = vectorizer.transform(all_desc[constants.COL_DESCRIPTION])
+    X_all_svd = svd.transform(X_all_tfidf)
+
+    # Create DataFrame with SVD features
+    svd_cols = [f"tfidf_svd_{i}" for i in range(n_components)]
+    svd_df = pd.DataFrame(
+        X_all_svd,
+        columns=svd_cols,
+        index=all_desc[constants.COL_BOOK_ID],
+    ).reset_index()  # book_id as column
+
+    # Merge to main df
+    df = df.merge(svd_df, left_on=constants.COL_BOOK_ID, right_on=constants.COL_BOOK_ID, how="left")
+
+    # Drop the old 500 raw tfidf_* columns
+    old_tfidf_cols = [col for col in df.columns if col.startswith("tfidf_") and "_" in col.split("_")[1]]
+    df = df.drop(columns=old_tfidf_cols, errors="ignore")
+
+    print(f"Replaced raw TF-IDF with {n_components} SVD components.")
+    return df
 
 
 def add_bert_features(df: pd.DataFrame, _train_df: pd.DataFrame, descriptions_df: pd.DataFrame) -> pd.DataFrame:
@@ -322,9 +437,18 @@ def handle_missing_values(df: pd.DataFrame, train_df: pd.DataFrame) -> pd.DataFr
     # Fill genre counts with 0
     df[constants.F_BOOK_GENRES_COUNT] = df[constants.F_BOOK_GENRES_COUNT].fillna(0)
 
+    df[constants.F_USER_GENRE_MEAN_RATING] = df[constants.F_USER_GENRE_MEAN_RATING].fillna(global_mean)
+    df[constants.F_USER_PREFERRED_GENRES_COUNT] = df[constants.F_USER_PREFERRED_GENRES_COUNT].fillna(0)
+    df[constants.F_BOOK_AGE] = df[constants.F_BOOK_AGE].fillna(0)
+    df[constants.F_DAYS_SINCE_LAST_READ] = df[constants.F_DAYS_SINCE_LAST_READ].fillna(0)
+
     # Fill TF-IDF features with 0 (for books without descriptions)
-    tfidf_cols = [col for col in df.columns if col.startswith("tfidf_")]
-    for col in tfidf_cols:
+    # tfidf_cols = [col for col in df.columns if col.startswith("tfidf_")]
+    # for col in tfidf_cols:
+    #     df[col] = df[col].fillna(0.0)
+
+    svd_cols = [col for col in df.columns if col.startswith("tfidf_svd_")]
+    for col in svd_cols:
         df[col] = df[col].fillna(0.0)
 
     # Fill BERT features with 0 (for books without descriptions)
@@ -369,8 +493,11 @@ def create_features(
     if include_aggregates:
         df = add_aggregate_features(df, train_df)
 
+    df = add_user_genre_features(df, train_df, book_genres_df)
     df = add_genre_features(df, book_genres_df)
+    df = add_temporal_features(df, train_df)
     df = add_text_features(df, train_df, descriptions_df)
+    # df = add_tfidf_svd_features(df, train_df, descriptions_df, n_components=100)
     df = add_bert_features(df, train_df, descriptions_df)
     df = handle_missing_values(df, train_df)
 

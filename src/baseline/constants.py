@@ -36,6 +36,10 @@ F_BOOK_MEAN_RATING = "book_mean_rating"
 F_BOOK_RATINGS_COUNT = "book_ratings_count"
 F_AUTHOR_MEAN_RATING = "author_mean_rating"
 F_BOOK_GENRES_COUNT = "book_genres_count"
+F_USER_GENRE_MEAN_RATING = "user_genre_mean_rating"
+F_USER_PREFERRED_GENRES_COUNT = "user_preferred_genres_count"
+F_BOOK_AGE = "book_age_at_read"
+F_DAYS_SINCE_LAST_READ = "days_since_last_read"
 
 # Metadata columns from raw data
 COL_GENDER = "gender"
