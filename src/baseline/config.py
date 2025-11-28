@@ -42,13 +42,13 @@ TFIDF_MAX_FEATURES = 500
 TFIDF_MIN_DF = 2
 TFIDF_MAX_DF = 0.95
 TFIDF_NGRAM_RANGE = (1, 2)
-TFIDF_SVD_COMPONENTS = 100
+TFIDF_SVD_COMPONENTS = 50
 
 # --- BERT PARAMETERS ---
 BERT_MODEL_NAME = constants.BERT_MODEL_NAME
 BERT_BATCH_SIZE = 8
 BERT_MAX_LENGTH = 512
-BERT_EMBEDDING_DIM = 768
+BERT_EMBEDDING_DIM = 256
 BERT_DEVICE = "cuda" if torch and torch.cuda.is_available() else "cpu"
 # Limit GPU memory usage to 50% to prevent overheating and OOM errors
 BERT_GPU_MEMORY_FRACTION = 0.75
@@ -90,3 +90,8 @@ LGB_FIT_PARAMS = {
     "eval_metric": "rmse",
     "callbacks": [],  # Placeholder for early stopping callback
 }
+
+BEST_PARAMS_PATH_OVERRIDE = None
+
+# --- GPU SUPPORT ---
+USE_GPU = ROOT_DIR / "output" / "models" / "best_params.json"  # Set to False to force CPU

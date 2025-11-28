@@ -357,7 +357,8 @@ def add_bert_features(df: pd.DataFrame, _train_df: pd.DataFrame, descriptions_df
                 mean_pooled = sum_embeddings / sum_mask
 
                 # Convert to numpy and store
-                batch_embeddings = mean_pooled.cpu().numpy()
+                # batch_embeddings = mean_pooled.cpu().numpy()
+                batch_embeddings = mean_pooled.cpu().numpy()[:, :config.BERT_EMBEDDING_DIM]
 
                 for book_id, embedding in zip(batch_book_ids, batch_embeddings, strict=False):
                     embeddings_dict[book_id] = embedding
@@ -496,8 +497,8 @@ def create_features(
     df = add_user_genre_features(df, train_df, book_genres_df)
     df = add_genre_features(df, book_genres_df)
     df = add_temporal_features(df, train_df)
-    df = add_text_features(df, train_df, descriptions_df)
-    # df = add_tfidf_svd_features(df, train_df, descriptions_df, n_components=100)
+    # df = add_text_features(df, train_df, descriptions_df)
+    df = add_tfidf_svd_features(df, train_df, descriptions_df, n_components=config.TFIDF_SVD_COMPONENTS)
     df = add_bert_features(df, train_df, descriptions_df)
     df = handle_missing_values(df, train_df)
 

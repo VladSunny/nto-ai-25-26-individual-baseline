@@ -13,6 +13,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from . import config, constants
 from .features import add_aggregate_features, handle_missing_values
 from .temporal_split import get_split_date_from_ratio, temporal_split_by_date
+import json
 
 
 def train() -> None:
@@ -115,7 +116,18 @@ def train() -> None:
 
     # Train single model
     print("\nTraining LightGBM model...")
-    model = lgb.LGBMRegressor(**config.LGB_PARAMS)
+
+    # Use optimized params if provided
+    if config.BEST_PARAMS_PATH_OVERRIDE and config.BEST_PARAMS_PATH_OVERRIDE.exists():
+        print(f"Loading optimized hyperparameters from {config.BEST_PARAMS_PATH_OVERRIDE}")
+        with open(config.BEST_PARAMS_PATH_OVERRIDE) as f:
+            lgb_params = json.load(f)
+        print(f"Using optimized params: n_estimators={lgb_params.get('n_estimators')}, num_leaves={lgb_params.get('num_leaves')}, etc.")
+    else:
+        print("Using default LGB_PARAMS from config")
+        lgb_params = config.LGB_PARAMS.copy()
+
+    model = lgb.LGBMRegressor(**lgb_params)
 
     # Update fit params with early stopping callback
     fit_params = config.LGB_FIT_PARAMS.copy()

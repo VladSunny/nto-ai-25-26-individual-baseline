@@ -83,6 +83,7 @@ def predict() -> None:
 
     # Clip predictions to be within the valid rating range [0, 10]
     clipped_preds = np.clip(test_preds, constants.PREDICTION_MIN_VALUE, constants.PREDICTION_MAX_VALUE)
+    clipped_preds = np.round(clipped_preds, 0)
 
     # Create submission file
     submission_df = test_set[[constants.COL_USER_ID, constants.COL_BOOK_ID]].copy()
